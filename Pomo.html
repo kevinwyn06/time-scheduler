@@ -1,0 +1,273 @@
+// adapted from Theo: https://codepen.io/theoludwig/pen/vYEbPoB
+
+<!DOCTYPE html>
+<!-- adapted from Divlo: https://codepen.io/Divlo/pen/vYEbPoB-->
+<html>
+  <head>
+    <base target="_top">
+    <?!= HtmlService.createHtmlOutputFromFile('PomStylesheet').getContent(); ?>
+  </head>
+  <body onload="setup()" style=>
+    <!-- Pomodoro Container -->
+    <div class="pomodoro-container">
+
+      <!-- Session -->
+      <div class="pomodoro-item">
+        <div id="labelSessionBreak" class="label">Session</div>
+        <br>
+        <div class="row-pomodoro">
+          <div id="timeLeft">25:00</div>
+        </div>
+        <br>
+      </div>
+
+      <!-- Session Length -->
+      <div class="pomodoro-item">
+        <div class="label">Session Length</div>
+        <div class="row-pomodoro">
+          <button id="sessionDecrement" class="btn-updown">-</button>
+          <div id="sessionLength" class="row-pomodoro lengthTime">25</div>
+          <button id="sessionIncrement" class="btn-updown">+</button>
+        </div>
+      </div>
+
+      <!-- Break Length -->
+      <div class="pomodoro-item">
+        <div class="label">Break Length</div>
+        <div class="row-pomodoro">
+          <button id="breakDecrement" class="btn-updown">-</button>
+          <div id="breakLength" class="row-pomodoro lengthTime">5</div>
+          <button id="breakIncrement" class="btn-updown">+</button>
+        </div>
+      </div>
+        
+      <!-- Play/Pause/Reset -->
+      <div class="pomodoro-item playerButton">
+        <div class="row-pomodoro buttonRow">
+          <button id="buttonPlay" class="btn-controller">
+            ▶<i id="playIcon"></i>
+          </button>
+          <button id="buttonReset" class="btn-controller"> 
+            ↺<i class="fas fa-sync" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- dropdown -->
+      <div class="custom-select">
+        <select id="selectActiveEvent">
+          <option value="0">Select task:</option>
+        </select>
+      </div>
+    </div>
+    
+    <!-- Sound -->
+    <audio id="beep" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3"></audio>
+
+    <script>
+      /* Variables DOM */
+      const buttonPlay = document.getElementById('buttonPlay');
+      const playIcon = document.getElementById('playIcon');
+      const buttonReset = document.getElementById('buttonReset');
+      const selectActiveEvent = document.getElementById('selectActiveEvent');
+      const timeLeftDOM = document.getElementById('timeLeft');
+      const labelSessionBreak = document.getElementById('labelSessionBreak');
+      const sessionLengthDOM = document.getElementById('sessionLength');
+      const breakLengthDOM = document.getElementById('breakLength');
+      const sessionDecrement = document.getElementById('sessionDecrement');
+      const sessionIncrement = document.getElementById('sessionIncrement');
+      const breakDecrement = document.getElementById('breakDecrement');
+      const breakIncrement = document.getElementById('breakIncrement');
+
+      /* Timer */
+      function startTimer(seconds, container, oncomplete) {
+        var startTime, timer, obj, ms = seconds*1000,
+            display = document.getElementById(container);
+        obj = {};
+        obj.resume = function() {
+            startTime = new Date().getTime();
+            timer = setInterval(obj.step,250); // adjust this number to affect granularity
+                                // lower numbers are more accurate, but more CPU-expensive
+        };
+        obj.pause = function() {
+            ms = obj.step();
+            clearInterval(timer);
+        };
+        obj.step = function() {
+            var now = Math.max(0,ms-(new Date().getTime()-startTime)),
+                m = Math.floor(now/60000), s = Math.floor(now/1000)%60;
+            s = (s < 10 ? "0" : "")+s;
+            display.innerHTML = m+":"+s;
+            if( now == 0) {
+                if( oncomplete) oncomplete();
+            }
+            return now;
+        };
+
+        obj.reset = function (seconds) {
+          ms = seconds * 1000;
+          startTime = new Date().getTime();
+          var time = convertSeconds(seconds);
+          display.innerHTML = time.minutes + ":" + (time.seconds < 10 ? "0" : "") + time.seconds;
+        };
+        
+        return obj;
+      }
+
+
+      /* Variables */
+      const arrayTime = timeLeftDOM.innerText.split(":");
+      let timeLeft = parseInt(arrayTime[0] * 60) + parseInt(arrayTime[1]); // timeLeft en secondes
+      let playNotClickedYet = true;
+      let isSession = true;
+      let breakLength = 5*60;
+      let timeLength = 25*60;
+
+      var timer = startTimer(timeLeft, "timeLeft", function() {
+        // Session
+        if(isSession) {
+          labelSessionBreak.innerText = "Break";
+          timeLeft = breakLength;
+        } 
+          
+        // Break
+        else {
+          labelSessionBreak.innerText = "Session";
+          timeLeft = timeLength;
+        }
+
+        timer.reset(timeLeft);
+
+        document.getElementById('beep').currentTime = 0;
+        document.getElementById('beep').play();
+        google.script.run.withSuccessHandler().alert();
+        
+        isSession = !isSession;
+      });
+
+      function convertSeconds(seconds) {
+        return {
+          minutes: Math.floor(seconds / 60), // nombre de minutes
+          seconds: seconds % 60 // nombre de secondes
+        }
+      }      
+
+      google.script.run.withSuccessHandler(function (scheduledEvents) {
+        for(var i = 0; i < scheduledEvents.length; i++) {
+          var event = String(scheduledEvents[i]);
+          if (event.length > 30) {
+            var eventTruncated = event.slice(0,33) + '...';
+          } else {
+            var eventTruncated = event;
+          }
+          var el = document.createElement("option");
+          el.textContent = eventTruncated;
+          el.value = event;
+          selectActiveEvent.appendChild(el);
+        }
+      }).getScheduledEvents();
+
+      /* Handle play/pause Button */
+      buttonPlay.addEventListener('click', () => {
+
+        // Chrono start (play)
+        if(playNotClickedYet) {
+          timer.resume();
+
+          // Log event and start time
+          if(isSession) {
+            var eventSelected = selectActiveEvent.selectedOptions[0].value;
+            initiateLogStart(eventSelected);
+          }
+
+          // Affichage icône pause
+          buttonPlay.innerText = "◼";
+        } 
+          
+        // Chrono mis en pause
+        else {
+          timer.pause();
+
+          // Log end time
+          if(isSession) {
+            initiateLogEnd();
+          }
+          
+          // Affichage icône play
+          buttonPlay.innerText = "▶";
+        }
+        playNotClickedYet = !playNotClickedYet;
+      }); 
+
+      /* Handle reset button */
+      buttonReset.addEventListener('click', () => {
+        if (isSession) {
+          timeLeft = timeLength;
+        } else {
+          timeLeft = breakLength;
+        }
+
+        if(!playNotClickedYet) {
+          buttonPlay.click();
+        }
+
+        timer.reset(timeLeft);
+      });
+
+      /* Handle length button */
+      function handleLengthButton(lengthValue, htmlElement, isAddition, isBreakLength) {
+        let result = 1;
+        if(isAddition) {
+          result = ++lengthValue;
+          htmlElement.innerText = result;
+        } else {
+          if(lengthValue != 1) {
+            result = --lengthValue;
+            htmlElement.innerText = result;
+          }
+        }
+        if(!playNotClickedYet) {
+          buttonPlay.click();
+        }
+        let resultSeconds = result * 60;
+        if(!isBreakLength) {
+          timeLength = resultSeconds;
+
+          if(labelSessionBreak.innerText === 'SESSION') {
+            timeLeftDOM.innerText = ('0'+result).slice(-2) + ":00";
+            timeLeft = resultSeconds;
+            timer.reset(timeLeft);
+          }
+        } else {
+          breakLength = resultSeconds;
+
+          if(labelSessionBreak.innerText === 'BREAK') {
+            timeLeftDOM.innerText = ('0'+result).slice(-2) + ":00";
+            timeLeft = resultSeconds;
+            timer.reset(timeLeft);
+          }
+        }
+        return resultSeconds;
+      }
+      sessionDecrement.addEventListener('click', () => {
+        handleLengthButton(parseInt(sessionLengthDOM.innerText), sessionLengthDOM, false, false);
+      });
+      sessionIncrement.addEventListener('click', () => {
+        handleLengthButton(parseInt(sessionLengthDOM.innerText), sessionLengthDOM, true, false);
+      });
+      breakDecrement.addEventListener('click', () => {
+        breakLength = handleLengthButton(parseInt(breakLengthDOM.innerText), breakLengthDOM, false, true);
+      });
+      breakIncrement.addEventListener('click', () => {
+        breakLength = handleLengthButton(parseInt(breakLengthDOM.innerText), breakLengthDOM, true, true);
+      });
+
+      async function initiateLogStart(task) {
+        google.script.run.withSuccessHandler().logStart(task);
+      }
+      async function initiateLogEnd() {
+        google.script.run.withSuccessHandler().logEnd();
+      }
+    </script>
+  </body>
+</html>
